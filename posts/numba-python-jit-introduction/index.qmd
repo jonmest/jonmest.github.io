@@ -14,11 +14,11 @@ Enter Numba, your Python speedster. It's not a magic wand, but it's as close as 
 
 ## The Quest for Speed
 
-Python, especially CPython, its most common implementation, is an interpreter. This means it has to do some backstage work before executing your code. It compiles your Python script into bytecode and then gets down to business. While this design choice makes Python accessible and portable, it's not winning any speed contests.
+Python, especially CPython, its most common implementation, is an interpreter. This means it has to do some backstage work before executing your code. During runtime it compiles your Python script into bytecode and then gets down to translating it into instructions your computer can execute. While this design choice makes Python accessible and portable, it's not winning any speed contests.
 
-Then there's the Global Interpreter Lock (GIL), which makes sure that only one processor thread is in control at any given time. So, even if you have a CPU that's the envy of your tech-savvy friends, Python might not make the most of it because of the GIL.
+Then there's the Global Interpreter Lock (GIL), which makes sure that only one processor thread is in control of the Python interpreter at any given time. So, even if you introduce multithreading to your application there won't be any performance gains unless it's working with some IO-bound task (e.g. most of the threads wait around for input or input from a disk or network).
 
-Numba is here to save the day by tossing the GIL aside and turning your Python script into machine code. It pulls off this magic trick through a technique known as Just-In-Time (JIT) compilation.
+Numba is here to save the day by tossing the GIL aside and turning your Python script into fast machine code. It pulls off this magic trick through a technique known as Just-In-Time (JIT) compilation.
 
 ## JIT vs. AOT Compilation: The Showdown
 
