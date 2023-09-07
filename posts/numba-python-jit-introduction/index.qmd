@@ -1,0 +1,260 @@
+---
+title: "Gotta Go Fast: Speeding Up Python With Numba"
+author: "Jon Cavallie Mester"
+date: "2023-09-04"
+format:
+  html:
+    code-fold: false
+
+jupyter: python3
+---
+Python's charm lies in its simplicity and vibrant ecosystem. But let's face it: it's not exactly known for blazing speed. Still, we cling to it, thanks to its ease of use. Sometimes, though, we yearn for both Python's simplicity and the speed of an F1 car.
+
+Enter Numba, your Python speedster. It's not a magic wand, but it's as close as you'll get to one in the world of Python.
+
+## The Quest for Speed
+
+Python, especially CPython, its most common implementation, is an interpreter. This means it has to do some backstage work before executing your code. It compiles your Python script into bytecode and then gets down to business. While this design choice makes Python accessible and portable, it's not winning any speed contests.
+
+Then there's the Global Interpreter Lock (GIL), which makes sure that only one processor thread is in control at any given time. So, even if you have a CPU that's the envy of your tech-savvy friends, Python might not make the most of it because of the GIL.
+
+Numba is here to save the day by tossing the GIL aside and turning your Python script into machine code. It pulls off this magic trick through a technique known as Just-In-Time (JIT) compilation.
+
+## JIT vs. AOT Compilation: The Showdown
+
+Before we go any further, let's get theoretical for a moment. Ahead-Of-Time (AOT) compilation is like baking a cake and serving it right away. You write your program, compile it into a binary, and voila! It's precompiled and ready to roll. But Just-In-Time (JIT) compilation is a bit different. You write your code, distribute it, and the first time your code gets called, it's compiled on the spot. The second time and beyond, it's already compiled and running at full throttle.
+
+Why go JIT instead of AOT? Well, for one, you can skip the headache of compiling your code for every platform out there. Plus, you get a speed boost, although there's a small price to pay during the first code invocation when it's getting warmed up.
+
+Now, let's dig into some code to show you what I'm talking about. To follow along, just `pip install numba`.
+```{python}
+#| label: basic-numba-demo
+#| fig-cap: "A simple declaration of a Numba JIT-compiled function."
+
+import numba as nb
+
+@nb.njit
+def square(x):
+    return x ** 2
+
+square(5)
+```
+
+Admittedly, this is a pretty simple example, and you won't see your code break the sound barrier here. But what's important is that `@nb.njit` decorator. It's the secret sauce that makes your code faster by *completely* compiling the function to machine code. It gives you the fastest code,but does not work with all Python code and libraries which we'll discuss later.
+
+## Speed Showdown
+
+But enough with the theory. How much faster are we talking? To find out, we'll use the `%timeit` magic function in our notebook. It runs the code multiple times and gives us the average execution time, which we want since the very first call of our Numba function will trigger a compilation throwing off any single time measurement. We'll also wrap the regular Python squaring operation in a function to factor in any function call overhead.
+
+```{python}
+#| label: basic-numba-demo-speed
+#| fig-cap: "Time measurement of square(5)"
+
+%timeit square(5)
+```
+
+```{python}
+#| label: basic-python-speed
+#| fig-cap: "Time measurement of standard_square(5)"
+def standard_square(x):
+    return x ** 2
+%timeit standard_square(5)
+```
+
+The Numba-compiled function is a smidge faster, but we're not breaking out the champagne just yet. But that's expected as most of the time's likely spent in CPython's function call mechanism and not our tiny piece of compiled code.
+
+## Taking on the Big Leagues
+
+Now, let's tackle a real-world example by using Pandas and Numpy to compute a 10-period Simple Moving Average (SMA):
+```{python}
+#| label: basic-pandas-speed
+#| fig-cap: "Computing 10-period SMA with Pandas"
+import numpy as np
+import pandas as pd
+
+def pandas_sma(df):
+    return df.rolling(10).mean()
+
+arr = np.random.rand(1000)
+df = pd.DataFrame({"my_column": arr})
+pandas_sma_result = pandas_sma(df)
+
+%timeit pandas_sma(df)
+```
+
+```{python}
+#| label: basic-numpy-sma-speed
+#| fig-cap: "Computing 10-period SMA with Numpy"
+def numpy_sma(a, n=10):
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
+
+numpy_sma_result = numpy_sma(arr)
+%timeit numpy_sma(arr)
+```
+We want to compare them with our own Numba-function written for the same purpose:
+
+```{python}
+#| label: basic-numba-sma-speed
+#| fig-cap: "Computing 10-period SMA with our own Numba-compiled function."
+import numba as nb
+
+@nb.njit
+def numba_sma(arr):
+    window = 10
+    out = np.empty(arr.shape)
+    out[:] = np.nan
+    n = len(arr)
+    for i in range(window, n+1):
+        window_sum = np.sum(arr[i-window:i])
+        out[i-1] = window_sum / window
+    return out
+
+numba_sma_result = numba_sma(arr)
+%timeit numba_sma(arr)
+```
+
+But before we continue, let's ensure that the Numba and Pandas implementations return similar results:
+
+```{python}
+#| label: compare-outputs
+#| fig-cap: "Ensure the results are the same. np.allclose is a great method for checking closeness of values in an array while ignoring small discrepancies."
+pandas_result_arr = pandas_sma_result["my_column"].values
+
+print(pandas_result_arr[-5:])
+print(numba_sma_result[-5:])
+np.allclose(pandas_result_arr, numba_sma_result, equal_nan=True)
+
+```
+
+Numba leaves Pandas in the dust, but it's not even twice as fast Numpy. Why? Because I'm just messing with you, silly! Wakey, wakey! 
+
+We're just getting started.
+
+## The Need for Speed: Reloaded
+
+We will crank things up a notch and write an even faster Numba implementation. But it means stepping out of our cozy Pythonic comfort zone and diving headfirst into regular for-loops and verbose code:
+
+```{python}
+#| label: faster-numba-sma
+@nb.njit
+def numba_sma_faster(arr):
+    window_size = 10
+    n = len(arr)
+    out = np.empty(n)
+    out[:] = np.nan
+    accumulator = 0.0
+
+    for i in range(n):
+        if i < window_size - 1:
+            accumulator += arr[i]
+            out[i] = np.nan
+        else:
+            accumulator += arr[i]
+            if i >= window_size:
+                accumulator -= arr[i - window_size]
+            out[i] = accumulator / window_size
+
+    return out
+
+faster_numba_sma_result = numba_sma_faster(arr)
+%timeit numba_sma_faster(arr)
+```
+```{python}
+np.allclose(pandas_result_arr, faster_numba_sma_result, equal_nan=True)
+```
+We're using the accumulator pattern here, which is much more efficient. Instead of repeatedly accessing all items in the window to compute the sum, we maintain a running total (the accumulator) and subtract the value of the item exiting the window while adding the value of the item entering the window.
+
+In traditional Python, this approach is not the best, and it would be slower than Numpy. But in Numba-land, these blasphemous for-loops can be blazing fast. This function is over 50 times faster than Pandas, over 3 times faster than Numpy, and 2 times faster than the previous Numba version. It may seem a bit unpythonic, but the results speak for themselves.
+
+## Nice, But Can It Run Parallel?
+
+Now, let's dive into the world of parallelization. I mentioned earlier that the Global Interpreter Lock (GIL) in CPython can be a buzzkill when you're trying to parallelize Python programs. But guess what? Numba, once again, comes to the rescue.
+
+When we use Numba's `njit` decorator, the code in the JIT-compiled function isn't interpreted; it's already compiled into machine code. This means we can sidestep the GIL entirely! In fact, Numba can even automatically parallelize array operations if you use the `parallel` keyword argument. Then you have `numba.prange`. It's like the regular Python `range`, but with a twist. If parallelization is enabled, the loop executes in parallel. If it's disabled, it behaves just like its standard counterpart.
+
+Now, let's put this to the test with our earlier, slightly sluggish Numba SMA function, and a much larger array since it does not make sense to spawn new threads for an operation that only takes a few microseconds in total:
+
+
+```{python}
+#| label: basic-numba-sma-speed-parallel
+@nb.njit(parallel=True)
+def numba_sma_parallel(arr):
+    window = 10
+    out = np.empty(arr.shape)
+    out[:] = np.nan
+    n = len(arr)
+    for i in nb.prange(window, n+1):
+        window_sum = np.sum(arr[i-window:i])
+        out[i-1] = window_sum / window
+    return out
+
+arr = np.random.rand(1_000_000)
+numba_sma_parallel_result = numba_sma_parallel(arr)
+%timeit numba_sma_parallel(arr)
+```
+Compare with Numpy:
+```{python}
+numpy_sma_result = numpy_sma(arr)
+%timeit numpy_sma(arr)
+```
+Over three times faster than the Numpy variant, with barely any changes! I'd say that's impressive.
+
+## Navigating the Numba Maze: Pitfalls to Watch Out For
+We've barely scratched the surface of Numba's greatness, but before we call it a day, it's crucial to discuss the potential pitfalls that come with the territory of working with Numba.
+
+Now, if you've been paying attention (and I trust you have), we've exclusively danced with Numba's njit decorator, which, let's be clear, is the gold standard. `@njit` is essentially a shorthand notation for another Numba decorator, expressed as `@jit(nopython=True)`. You see, it's like flipping a switch into what Numba aficionados call the `nopython` mode where all the code is compiled.
+
+There's also an `object` mode which Numba falls back on if Numba is unable to compile all of the code. In this mode, Numba becomes a bit of a detective, looking for loops it can convert into faster machine code. However, the rest of your code remains as interpreted Python code.  If you don't enforce `nopython` mode using `@njit` or `jit(nopython=True)`, Numba might fall back to `object` mode, log some warnings, and provide little to no performance benefits at all.
+
+But there are scenarios where you're practically forced to abandon the cozy realm of `nopython` mode, and go with `object` object mode as the second best option.
+
+Look here:
+
+```{python}
+from scipy.stats import entropy
+
+@nb.njit
+def entropy_nb(probability_distribution):
+    return entropy(probability_distribution, base=2)
+
+# Calculate Shannon entropy for a fair coin toss
+try:
+    entropy_nb(np.array([0.5, 0.5]))
+except nb.TypingError as e:
+    print(e)
+```
+That's some ugly typing error. A lot of SciPy functions can't be used in `nopython` mode because they are C-bindings that don't play too well with Numba. Let's try it without `nopython` mode enforced:
+
+```{python}
+@nb.jit # ← Notice "jit" instead of "njit"
+def entropy_nb(probability_distribution):
+    return entropy(probability_distribution, base=2)
+
+# Calculate Shannon entropy for a fair coin toss
+entropy_nb(np.array([0.5, 0.5]))
+```
+
+Some pesky warnings pop up, Numba attempts to compile, realizes it's in over its head, and gracefully falls back to object mode. In the end, it works as expected, but it does not exactly look pretty, does it?
+
+Before we part ways, let's heed Numba's advice in the logged warnings and explicitly enforce `object` mode:
+
+```{python}
+@nb.jit(forceobj=True)
+def entropy_nb(probability_distribution):
+    return entropy(probability_distribution, base=2)
+
+# Calculate Shannon entropy for a fair coin toss
+entropy_nb(np.array([0.5, 0.5]))
+```
+
+No warnings, no fancy compilation attempts - it just works. Of course, in this particular example, using Numba might seem a bit like bringing a rocket launcher to a thumb wrestling match, as it won't provide any significant performance boost. But where it might shine is in a more complex function where some parts can't be compiled, yet there are loops that could certainly benefit from Numba's `nopython` mode. 
+
+## Conclusion
+
+In conclusion, Numba is a powerful tool for enhancing the performance of Python code. Its ability to compile Python functions into machine code using JIT compilation can significantly accelerate computations. We explored its advantages, from basic usage to more complex scenarios like parallelization.
+
+However, it's essential to be aware of potential pitfalls, such as falling back to "object" mode when "nopython" mode isn't feasible, particularly for certain external libraries or complex functions. While Numba provides an effective means to optimize Python, careful consideration of its application is necessary to maximize its benefits.
+
+If this post piqued your interest, I recommend that you connect with me on [LinkedIn](https://www.linkedin.com/in/jon-mester/) and check out Numba's [documentation](https://numba.readthedocs.io). Get in touch if you have any questions.

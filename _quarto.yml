@@ -1,0 +1,19 @@
+project:
+  type: website
+
+website:
+  title: "Jon Cavallie Mester"
+  navbar:
+    background: dark
+    right:
+      - icon: github
+        href: https://github.com/jonmest
+      - icon: linkedin
+        href: https://www.linkedin.com/in/jon-mester/
+format:
+  html:
+    theme: yeti
+    css: styles.css
+
+
+
