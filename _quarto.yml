@@ -3,6 +3,8 @@ project:
 
 website:
   title: "Jon Cavallie Mester"
+  site-url: https://www.cavalliemester.com
+  description: "The personal blog of Jon Cavallie Mester."
   navbar:
     background: dark
     right:
@@ -12,8 +14,10 @@ website:
         href: https://www.linkedin.com/in/jon-mester/
 format:
   html:
-    theme: yeti
-    css: styles.css
+    theme: 
+      - yeti
+      - custom.scss
+   
 
 
 
